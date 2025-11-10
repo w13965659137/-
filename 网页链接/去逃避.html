@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>杰瑞快跑 H5</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <style>
+        /* 1. 基础样式 */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden; /* 防止页面滚动 */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f0f0f0; /* 页面背景色 */
+        }
+
+        /* 游戏容器：全屏，竖屏 */
+        #game-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background-color: #87CEEB; /* 天空蓝背景 */
+            overflow: hidden;
+            /* 禁用iOS上的长按菜单和Android上的文本选择 */
+            touch-action: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+        
+        /* * 2. 游戏元素 
+         * (注意：这里使用CSS模拟图片)
+         */
+
+        /* 玩家 (杰瑞) 
+           你需要替换为你自己的 杰瑞.png
+        */
+        #player {
+            position: absolute;
+            bottom: 30px; /* 固定在底部 */
+            width: 50px;
+            height: 50px;
+            
+            /* 【占位符】用一个棕色圆形模拟杰瑞 */
+            background-color: #8B4513; /* 棕色 */
+            border-radius: 50%;
+            /* 【替换点】
+            background-image: url('杰瑞.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-color: transparent; 
+            */
+
+            /* 使用 transform 来移动，性能更好 */
+            transform: translateX(-50%); /* 初始居中 */
+            left: 50%; /* 初始居中 */
+            transition: left 0.05s linear; /* 稍微平滑一点的移动 */
+        }
+
+        /* 障碍物 (路障) 
+           你需要替换为你自己的 路障.jpg
+        */
+        .obstacle {
+            position: absolute;
+            width: 40px;
+            height: 60px;
+            
+            /* 【占位符】用CSS画一个橙色锥形 */
+            background-color: #FFA500; /* 橙色 */
+            clip-path: polygon(50% 0%, 100% 100%, 0% 100%); /* 剪切为三角形 */
+
+            /* 【替换点】
+            background-image: url('路障.jpg');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-color: transparent; 
+            clip-path: none;
+            */
+            
+            top: -60px; /* 从屏幕外开始 */
+        }
+
+        /* 胜利条件 (鼠洞) */
+        #win-hole {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100px;
+            height: 50px;
+            background-color: #333; /* 深灰色 */
+            border-radius: 50% 50% 0 0; /* 半圆形 */
+            display: none; /* 默认隐藏 */
+            z-index: 5;
+        }
+
+        /* 3. 游戏UI与覆盖层 */
+
+        /* 计分板 */
+        #score-board {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 24px;
+            color: white;
+            font-weight: bold;
+            z-index: 10;
+        }
+
+        /* 覆盖层 (用于开始和结束) */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 20;
+            text-align: center;
+        }
+
+        .overlay h2 {
+            font-size: 32px;
+            margin-bottom: 20px;
+        }
+
+        .overlay button {
+            font-size: 20px;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            background-color: #FFA500;
+            color: #333;
+            font-weight: bold;
+        }
+        
+        /* 初始隐藏游戏结束界面 */
+        #game-over-screen {
+            display: none;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        
+        <div id="score-board">躲避: 0</div>
+
+        <div id="player"></div>
+        
+        <div id="win-hole"></div>
+    </div>
+
+    <div id="start-screen" class="overlay">
+        <h2>杰瑞快跑</h2>
+        <p style="width: 80%; max-width: 400px;">拖动杰瑞左右移动，躲避路障！<br>成功躲避10个路障后，进入鼠洞！</p>
+        <button id="start-button">开始游戏</button>
+    </div>
+
+    <div id="game-over-screen" class="overlay">
+        <h2 id="result-title">哎呀，失败了！</h2>
+        <p id="result-message">你成功躲过了 0 个路障。</p>
+        <button id="restart-button">重新开始</button>
+    </div>
+
+
+    <script>
+        // 1. DOM 元素获取
+        const gameContainer = document.getElementById('game-container');
+        const player = document.getElementById('player');
+        const winHole = document.getElementById('win-hole');
+        const scoreBoard = document.getElementById('score-board');
+        
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const startButton = document.getElementById('start-button');
+        const restartButton = document.getElementById('restart-button');
+        
+        const resultTitle = document.getElementById('result-title');
+        const resultMessage = document.getElementById('result-message');
+
+        // 2. 游戏状态变量
+        let gameActive = false;
+        let isDragging = false;
+        let isWinningPhase = false; // 是否进入"进洞"阶段
+        let score = 0;
+        let gameLoopId; // 用于 requestAnimationFrame
+        let obstacleSpawnTimer;
+        
+        const winScore = 10; // 胜利需要躲避的数量
+        const obstacleSpeed = 5; // 路障下落速度
+        const spawnRate = 1200; // 路障生成间隔 (毫秒)
+
+        // 3. 玩家控制 (拖动)
+        
+        function getDragX(e) {
+            // 统一处理 'touchstart' 和 'mousedown' 事件
+            return e.touches ? e.touches[0].clientX : e.clientX;
+        }
+
+        function dragStart(e) {
+            if (!gameActive) return;
+            isDragging = true;
+        }
+
+        function dragMove(e) {
+            if (!isDragging || !gameActive) return;
+            
+            // 阻止H5的默认拖动行为 (如页面滚动)
+            e.preventDefault(); 
+            
+            let currentX = getDragX(e);
+            
+            // 限制玩家在屏幕边界内
+            const playerWidth = player.offsetWidth;
+            const containerWidth = gameContainer.offsetWidth;
+            
+            // 计算 'left' 值 (基于中心点)
+            let targetLeft = currentX - (playerWidth / 2);
+            
+            // 边界检测
+            if (targetLeft < 0) {
+                targetLeft = 0;
+            }
+            if (targetLeft > containerWidth - playerWidth) {
+                targetLeft = containerWidth - playerWidth;
+            }
+            
+            player.style.left = targetLeft + 'px';
+        }
+
+        function dragEnd() {
+            isDragging = false;
+        }
+
+        // 绑定PC和移动端事件
+        gameContainer.addEventListener('mousedown', dragStart);
+        gameContainer.addEventListener('touchstart', dragStart);
+        gameContainer.addEventListener('mousemove', dragMove);
+        gameContainer.addEventListener('touchmove', dragMove);
+        gameContainer.addEventListener('mouseup', dragEnd);
+        gameContainer.addEventListener('touchend', dragEnd);
+        gameContainer.addEventListener('mouseleave', dragEnd); // 鼠标移出也算结束
+
+        // 4. 游戏逻辑
+        
+        function startGame() {
+            // (1) 重置状态
+            gameActive = true;
+            isWinningPhase = false;
+            score = 0;
+            scoreBoard.textContent = `躲避: 0`;
+            scoreBoard.style.display = 'block';
+
+            // (2) 隐藏覆盖层
+            startScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+            winHole.style.display = 'none';
+
+            // (3) 清理上一局的路障
+            document.querySelectorAll('.obstacle').forEach(o => o.remove());
+
+            // (4) 重置玩家位置
+            player.style.left = '50%';
+            
+            // (5) 启动游戏循环和生成器
+            gameLoop();
+            obstacleSpawnTimer = setInterval(spawnObstacle, spawnRate);
+        }
+
+        function spawnObstacle() {
+            // 如果游戏结束或进入胜利阶段，则不再生成
+            if (!gameActive || isWinningPhase) return; 
+
+            const obstacle = document.createElement('div');
+            obstacle.className = 'obstacle';
+            
+            // 随机X轴位置 (保证路障完整出现在屏幕内)
+            const obstacleWidth = 40;
+            const maxLeft = gameContainer.offsetWidth - obstacleWidth;
+            obstacle.style.left = Math.random() * maxLeft + 'px';
+            
+            gameContainer.appendChild(obstacle);
+        }
+
+        // 碰撞检测 (使用 getBoundingClientRect)
+        function isColliding(el1, el2) {
+            const rect1 = el1.getBoundingClientRect();
+            const rect2 = el2.getBoundingClientRect();
+            
+            // 矩形重叠算法
+            return !(
+                rect1.right < rect2.left ||
+                rect1.left > rect2.right ||
+                rect1.bottom < rect2.top ||
+                rect1.top > rect2.bottom
+            );
+        }
+
+        // 游戏主循环 (使用 requestAnimationFrame 保证流畅)
+        function gameLoop() {
+            if (!gameActive) return;
+
+            // A. 胜利阶段：检查是否进洞
+            if (isWinningPhase) {
+                // 检查玩家和鼠洞的碰撞
+                if (isColliding(player, winHole)) {
+                    endGame(true); // 玩家胜利
+                }
+            }
+            
+            // B. 游戏阶段：移动路障并检查碰撞
+            let obstacles = document.querySelectorAll('.obstacle');
+            obstacles.forEach(obstacle => {
+                // (1) 移动路障
+                let currentTop = parseFloat(obstacle.style.top || -60);
+                obstacle.style.top = (currentTop + obstacleSpeed) + 'px';
+
+                // (2) 检查与玩家的碰撞 (仅在非胜利阶段)
+                if (!isWinningPhase && isColliding(player, obstacle)) {
+                    endGame(false); // 玩家失败
+                }
+                
+                // (3) 路障移出屏幕
+                if (currentTop > gameContainer.offsetHeight) {
+                    obstacle.remove();
+                    
+                    // 只有在非胜利阶段，躲避才计分
+                    if (!isWinningPhase) {
+                        score++;
+                        scoreBoard.textContent = `躲避: ${score}`;
+                        
+                        // (4) 检查是否达到胜利分数
+                        if (score >= winScore) {
+                            enterWinningPhase();
+                        }
+                    }
+                }
+            });
+
+            // 持续循环
+            gameLoopId = requestAnimationFrame(gameLoop);
+        }
+        
+        // 进入胜利阶段的逻辑
+        function enterWinningPhase() {
+            isWinningPhase = true;
+            scoreBoard.textContent = '快进洞!';
+            winHole.style.display = 'block';
+            
+            // 停止生成新的路障
+            clearInterval(obstacleSpawnTimer);
+            
+            // (可选) 移除所有现存的路障，让玩家专心进洞
+            // document.querySelectorAll('.obstacle').forEach(o => o.remove());
+        }
+
+        // 游戏结束
+        function endGame(isWin) {
+            gameActive = false;
+            isDragging = false;
+            scoreBoard.style.display = 'none';
+
+            // 停止游戏循环和生成
+            cancelAnimationFrame(gameLoopId);
+            clearInterval(obstacleSpawnTimer);
+            
+            // 显示结束界面
+            if (isWin) {
+                resultTitle.textContent = '挑战成功！';
+                resultMessage.textContent = '杰瑞安全回家了！';
+            } else {
+                resultTitle.textContent = '哎呀，失败了！';
+                resultMessage.textContent = `你成功躲过了 ${score} 个路障。`;
+            }
+            gameOverScreen.style.display = 'flex';
+        }
+
+        // 5. 绑定开始/重开按钮
+        startButton.addEventListener('click', startGame);
+        restartButton.addEventListener('click', startGame);
+
+    </script>
+
+</body>
+</html>
